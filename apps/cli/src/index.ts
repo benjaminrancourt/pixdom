@@ -179,13 +179,15 @@ interface ConvertOpts {
   selector?: string;
   allowLocal?: boolean;
   auto?: boolean;
+  verbose?: boolean;
+  waitUntil: string;
 }
 
 // ---------------------------------------------------------------------------
 // Main action
 // ---------------------------------------------------------------------------
 
-async function convertAction(opts: ConvertOpts, fmt: { argv: string[]; color: boolean; noProgress: boolean }): Promise<void> {
+async function convertAction(opts: ConvertOpts, fmt: { argv: string[]; color: boolean; noProgress: boolean; verbose: boolean }): Promise<void> {
   // Input mutex validation
   const inputFlags = [opts.html, opts.file, opts.url, opts.image].filter((v) => v !== undefined);
   if (inputFlags.length === 0) {
@@ -203,6 +205,18 @@ async function convertAction(opts: ConvertOpts, fmt: { argv: string[]; color: bo
     process.stderr.write(formatError(formatErr, fmt) + '\n');
     process.exit(1);
   }
+
+  // --wait-until validation
+  const VALID_WAIT_UNTIL = ['load', 'domcontentloaded', 'networkidle'] as const;
+  if (!(VALID_WAIT_UNTIL as readonly string[]).includes(opts.waitUntil)) {
+    const renderErr: RenderError = {
+      code: 'INVALID_WAIT_UNTIL',
+      message: `--wait-until must be one of: load, domcontentloaded, networkidle (got: "${opts.waitUntil}")`,
+    };
+    process.stderr.write(formatError(renderErr, fmt) + '\n');
+    process.exit(1);
+  }
+  const waitUntil = opts.waitUntil as 'load' | 'domcontentloaded' | 'networkidle';
 
   // --fps validation (7.1)
   let fps: number | undefined;
@@ -477,6 +491,8 @@ async function convertAction(opts: ConvertOpts, fmt: { argv: string[]; color: bo
       allowLocal: opts.allowLocal === true,
       auto: autoEnabled,
       profileViewport: opts.profile !== undefined,
+      verbose: fmt.verbose,
+      waitUntil,
     },
     { onProgress },
   );
@@ -526,8 +542,17 @@ program
   .option('--selector <css>', 'CSS selector to capture a specific DOM element (e.g. "#canvas", ".card")')
   .option('--allow-local', 'Allow rendering of localhost and private network URLs (development only)')
   .option(
+    '--wait-until <strategy>',
+    'Navigation wait strategy: load | domcontentloaded | networkidle. Use domcontentloaded or load for pages with persistent connections (SSE, WebSocket, chat widgets) that never go network-idle.',
+    'networkidle',
+  )
+  .option(
     '--auto',
     'Automatically detect the primary content element, animation duration, and optimal FPS',
+  )
+  .option(
+    '--verbose',
+    'Print console messages, failed requests, and raw error detail on failure (useful for CSP/timeout debugging)',
   )
   .action(async (opts) => {
     const globalOpts = program.opts<{ color: boolean; progress: boolean }>();
@@ -536,8 +561,9 @@ program
       process.env['NO_COLOR'] === undefined &&
       !!process.stderr.isTTY;
     const noProgress = globalOpts.progress === false || !process.stderr.isTTY;
+    const verbose = opts.verbose === true;
     try {
-      await convertAction(opts, { argv: originalArgv, color, noProgress });
+      await convertAction(opts, { argv: originalArgv, color, noProgress, verbose });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`Error: ${msg}\n`);

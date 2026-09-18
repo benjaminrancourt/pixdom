@@ -1,3 +1,5 @@
+import type { PageDebugInfo } from '@pixdom/types';
+
 export type RenderErrorCode =
   | 'BROWSER_LAUNCH_FAILED'
   | 'PAGE_LOAD_FAILED'
@@ -14,6 +16,7 @@ export type RenderErrorCode =
   | 'INVALID_OUTPUT_PATH'
   | 'INVALID_FPS'
   | 'INVALID_DURATION'
+  | 'INVALID_WAIT_UNTIL'
   | 'RESOURCE_LIMIT_EXCEEDED';
 
 export interface RenderError {
@@ -21,6 +24,7 @@ export interface RenderError {
   message: string;
   cause?: unknown;
   hints?: string[];
+  debug?: PageDebugInfo;
 }
 
 export function makeError(
@@ -28,8 +32,10 @@ export function makeError(
   message: string,
   cause?: unknown,
   hints?: string[],
+  debug?: PageDebugInfo,
 ): RenderError {
   const error: RenderError = { code, message, cause };
   if (hints !== undefined) error.hints = hints;
+  if (debug !== undefined) error.debug = debug;
   return error;
 }

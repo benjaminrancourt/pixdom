@@ -11,7 +11,10 @@ import { renderAnimated } from './animated-renderer.js';
 import { renderImage } from './image-renderer.js';
 import { scanForCycleLengths } from './animation-cycle-hint.js';
 import { installRequestGuard } from './request-guard.js';
+import { createPageDebugCollector } from './page-debug.js';
 import type { OnProgress } from './progress.js';
+
+const NAVIGATION_TIMEOUT_MS = 30000;
 
 export type { RenderError, RenderErrorCode };
 export type { ProgressEvent, OnProgress } from './progress.js';
@@ -80,9 +83,22 @@ export async function render(
     });
     const page = await context.newPage();
 
-    page.setDefaultNavigationTimeout(30000);
+    page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
 
-    await installRequestGuard(page, options);
+    const debug = options.verbose === true ? createPageDebugCollector(NAVIGATION_TIMEOUT_MS) : undefined;
+    if (debug) {
+      page.on('console', (msg) => debug.addConsole({ msgType: msg.type(), text: msg.text() }));
+      page.on('pageerror', (error) => debug.addPageError({ message: error.message }));
+      page.on('requestfailed', (request) =>
+        debug.addFailedRequest({
+          url: request.url(),
+          method: request.method(),
+          failureText: request.failure()?.errorText ?? 'unknown',
+        }),
+      );
+    }
+
+    await installRequestGuard(page, options, debug?.addGuardAbort.bind(debug));
 
     // deviceScaleFactor requires context-level config; set via emulation
     if (options.viewport.deviceScaleFactor !== 1) {
@@ -91,9 +107,9 @@ export async function render(
 
     emit({ type: 'step-start', step: 'load-page' });
     try {
-      await loadPage(page, options.input);
+      await loadPage(page, options.input, options.waitUntil);
     } catch (cause) {
-      return err(makeError('PAGE_LOAD_FAILED', 'Failed to load page', cause));
+      return err(makeError('PAGE_LOAD_FAILED', 'Failed to load page', cause, undefined, debug?.snapshot()));
     }
     emit({ type: 'step-done', step: 'load-page' });
 
@@ -258,7 +274,7 @@ export async function render(
         const buffer = await renderStatic(page, staticOptions, elementHandle, emit);
         return ok(buffer);
       } catch (cause) {
-        return err(makeError('CAPTURE_FAILED', 'Static render failed', cause));
+        return err(makeError('CAPTURE_FAILED', 'Static render failed', cause, undefined, debug?.snapshot()));
       }
     }
 
@@ -291,7 +307,7 @@ export async function render(
         const code: RenderErrorCode = msg.toLowerCase().includes('ffmpeg')
           ? 'ENCODE_FAILED'
           : 'CAPTURE_FAILED';
-        return err(makeError(code, `Animated render failed: ${msg}`, cause));
+        return err(makeError(code, `Animated render failed: ${msg}`, cause, undefined, debug?.snapshot()));
       }
     }
 

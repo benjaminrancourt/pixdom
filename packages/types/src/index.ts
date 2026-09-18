@@ -13,6 +13,10 @@ export type RenderInput = z.infer<typeof RenderInputSchema>;
 export const OutputFormatSchema = z.enum(['png', 'jpeg', 'webp', 'gif', 'mp4', 'webm']);
 export type OutputFormat = z.infer<typeof OutputFormatSchema>;
 
+// NavigationWaitUntil — Playwright wait strategy for page.goto/setContent
+export const NavigationWaitUntilSchema = z.enum(['load', 'domcontentloaded', 'networkidle']);
+export type NavigationWaitUntil = z.infer<typeof NavigationWaitUntilSchema>;
+
 // ViewportOptions
 export const ViewportOptionsSchema = z.object({
   width: z.number().default(1280),
@@ -36,8 +40,36 @@ export const RenderOptionsSchema = z.object({
   auto: z.boolean().optional(),
   profileViewport: z.boolean().optional(),
   blockFileSubresources: z.boolean().optional(),
+  verbose: z.boolean().optional(),
+  waitUntil: NavigationWaitUntilSchema.optional(),
 });
 export type RenderOptions = z.infer<typeof RenderOptionsSchema>;
+
+// PageDebugInfo — diagnostics collected during page load/capture, surfaced only
+// when RenderOptions.verbose is set. Not user input, so no zod schema needed.
+export interface PageDebugInfo {
+  navigationTimeoutMs: number;
+  consoleMessages: { msgType: string; text: string }[];
+  pageErrors: { message: string }[];
+  failedRequests: { url: string; method: string; failureText: string }[];
+  guardAbortedRequests: {
+    url: string;
+    method: string;
+    reason: 'protocol' | 'file-subresource' | 'blocked-host';
+  }[];
+  truncated: {
+    consoleMessages: boolean;
+    pageErrors: boolean;
+    failedRequests: boolean;
+    guardAbortedRequests: boolean;
+  };
+  totals: {
+    consoleMessages: number;
+    pageErrors: number;
+    failedRequests: number;
+    guardAbortedRequests: number;
+  };
+}
 
 // ProfileId — full union: 19 canonical slugs + 3 legacy aliases
 export const ProfileIdSchema = z.enum([

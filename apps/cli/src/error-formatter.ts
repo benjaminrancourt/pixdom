@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { RenderError, RenderErrorCode } from '@pixdom/core';
+import type { PageDebugInfo } from '@pixdom/types';
 
 // ---------------------------------------------------------------------------
 // ANSI color helpers
@@ -156,6 +157,13 @@ const TEMPLATES: Partial<Record<RenderErrorCode, ErrorTemplate>> = {
     docs: '--duration',
     correction: null,
   },
+  INVALID_WAIT_UNTIL: {
+    title: 'Invalid wait strategy',
+    whatHappened: (e) => e.message,
+    howToFix: '--wait-until must be one of: load, domcontentloaded, networkidle.',
+    docs: '--wait-until',
+    correction: null,
+  },
   RESOURCE_LIMIT_EXCEEDED: {
     title: 'Resource limit exceeded',
     whatHappened: (e) => e.message,
@@ -214,14 +222,114 @@ function buildExample(argv: string[], addFlag: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// --verbose diagnostics
+// ---------------------------------------------------------------------------
+
+function extractCauseMessage(cause: unknown): string | undefined {
+  if (cause instanceof Error) return cause.message;
+  if (typeof cause === 'string') return cause;
+  if (cause && typeof cause === 'object') {
+    try {
+      return JSON.stringify(cause);
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function guardReasonLabel(reason: PageDebugInfo['guardAbortedRequests'][number]['reason']): string {
+  switch (reason) {
+    case 'protocol':
+      return 'disallowed URL protocol';
+    case 'file-subresource':
+      return 'file: sub-resource blocked (MCP hardening)';
+    case 'blocked-host':
+      return 'blocked private/loopback/link-local host (SSRF guard)';
+  }
+}
+
+function formatVerboseSection(debug: PageDebugInfo, color: boolean): string[] {
+  const lines: string[] = [];
+  lines.push('');
+  lines.push(`  ${bold('Verbose diagnostics (--verbose):', color)}`);
+  lines.push(`    Navigation timeout:  ${debug.navigationTimeoutMs}ms`);
+
+  const section = (
+    label: string,
+    shown: number,
+    total: number,
+    truncated: boolean,
+    render: () => string[],
+  ) => {
+    if (shown === 0) {
+      lines.push(`    ${label}: none`);
+      return;
+    }
+    const suffix = truncated ? ` (${shown} of ${total} shown)` : ` (${shown})`;
+    lines.push(`    ${label}${suffix}:`);
+    lines.push(...render());
+  };
+
+  section(
+    'Console messages',
+    debug.consoleMessages.length,
+    debug.totals.consoleMessages,
+    debug.truncated.consoleMessages,
+    () =>
+      debug.consoleMessages.map(
+        (m) => `      ${dim(`[${m.msgType}] ${relativizePaths(m.text)}`, color)}`,
+      ),
+  );
+
+  section(
+    'Page errors',
+    debug.pageErrors.length,
+    debug.totals.pageErrors,
+    debug.truncated.pageErrors,
+    () => debug.pageErrors.map((e) => `      ${dim(relativizePaths(e.message), color)}`),
+  );
+
+  section(
+    'Failed network requests',
+    debug.failedRequests.length,
+    debug.totals.failedRequests,
+    debug.truncated.failedRequests,
+    () =>
+      debug.failedRequests.map(
+        (r) => `      ${dim(`${r.method} ${relativizePaths(r.url)} — ${r.failureText}`, color)}`,
+      ),
+  );
+
+  section(
+    'Blocked by pixdom request guard',
+    debug.guardAbortedRequests.length,
+    debug.totals.guardAbortedRequests,
+    debug.truncated.guardAbortedRequests,
+    () =>
+      debug.guardAbortedRequests.map(
+        (r) =>
+          `      ${dim(`${r.method} ${relativizePaths(r.url)} — ${guardReasonLabel(r.reason)}`, color)}`,
+      ),
+  );
+
+  return lines;
+}
+
+// ---------------------------------------------------------------------------
 // Main formatter
 // ---------------------------------------------------------------------------
 
 export function formatError(
   error: RenderError,
-  opts: { argv: string[]; color: boolean },
+  opts: { argv: string[]; color: boolean; verbose?: boolean },
 ): string {
-  const { argv, color } = opts;
+  const { argv, color, verbose } = opts;
+
+  // Extract the raw cause message before scrubbing below — scrubSecrets is built for
+  // plain-object causes and, since Error's message/stack are non-enumerable, would
+  // otherwise reduce an Error cause to `{}` before we can read its message.
+  const causeMessage = extractCauseMessage(error.cause);
 
   // Scrub secrets from error context if it's a plain object (11.2)
   if (error.cause && typeof error.cause === 'object' && !Array.isArray(error.cause)) {
@@ -274,6 +382,15 @@ export function formatError(
       ? sanitizeFfmpegStderr(displayError.message)
       : displayError.message;
     lines.push(`  ${bold('Detail:', color)}        ${dim(detail, color)}`);
+  } else if (verbose && causeMessage !== undefined) {
+    // Templates like PAGE_LOAD_FAILED/BROWSER_LAUNCH_FAILED have a static
+    // whatHappened() and normally discard the underlying error entirely —
+    // --verbose surfaces it without changing their default output.
+    lines.push(`  ${bold('Detail:', color)}        ${dim(relativizePaths(causeMessage), color)}`);
+  }
+
+  if (verbose && error.debug) {
+    lines.push(...formatVerboseSection(error.debug, color));
   }
 
   return lines.join('\n');

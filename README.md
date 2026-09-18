@@ -275,6 +275,12 @@ Input (mutually exclusive, one required):
   --url <url>           Remote URL (http/https only)
   --image <path>        Local image file — bypasses browser entirely
 
+Loading:
+  --wait-until <strategy>  load | domcontentloaded | networkidle (default: networkidle)
+                           Use domcontentloaded or load for pages with persistent
+                           connections (SSE, WebSocket, chat widgets) that never
+                           go network-idle and would otherwise time out.
+
 Output:
   --output <path>       Output file path (default: ./pixdom-output.<format>)
   --format <fmt>        png | jpeg | webp | gif | mp4 | webm (default: png)
@@ -296,6 +302,10 @@ Selection:
 
 Security:
   --allow-local         Allow localhost/private network URLs (dev only)
+
+Diagnostics:
+  --verbose             Print console messages, failed requests, and raw error
+                         detail on failure (useful for CSP/timeout debugging)
 ```
 
 ```

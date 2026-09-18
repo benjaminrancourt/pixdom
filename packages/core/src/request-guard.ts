@@ -60,24 +60,45 @@ async function isBlockedHost(hostname: string): Promise<boolean> {
   return false;
 }
 
+export type GuardAbortReason = 'protocol' | 'file-subresource' | 'blocked-host';
+
+export interface GuardAbortInfo {
+  url: string;
+  method: string;
+  reason: GuardAbortReason;
+}
+
 /**
  * Installs a Playwright request interceptor that aborts requests to:
  * - Non-http/https protocols
  * - Loopback, RFC1918, link-local, and IPv6-private hosts (unless allowLocal is true)
  *
  * Must be called after page creation and before content is loaded.
+ *
+ * `onAbort`, when provided, is notified of every aborted request with a
+ * human-readable reason — used to power `--verbose` diagnostics without
+ * affecting behavior when omitted.
  */
-export async function installRequestGuard(page: Page, options: RenderOptions): Promise<void> {
+export async function installRequestGuard(
+  page: Page,
+  options: RenderOptions,
+  onAbort?: (info: GuardAbortInfo) => void,
+): Promise<void> {
   const allowLocal = options.allowLocal === true;
 
   await page.route('**', async (route) => {
-    const url = new URL(route.request().url());
+    const request = route.request();
+    const url = new URL(request.url());
+    const abort = async (reason: GuardAbortReason) => {
+      onAbort?.({ url: request.url(), method: request.method(), reason });
+      await route.abort('blockedbyclient');
+    };
 
     // Protocol check — always enforced regardless of allowLocal.
     // file: is allowed when the input itself is a local file (already validated via realpathSync).
     const isFileInput = options.input.type === 'file';
     if (!ALLOWED_PROTOCOLS.has(url.protocol) && !(isFileInput && url.protocol === 'file:')) {
-      await route.abort('blockedbyclient');
+      await abort('protocol');
       return;
     }
 
@@ -87,9 +108,9 @@ export async function installRequestGuard(page: Page, options: RenderOptions): P
     if (
       options.blockFileSubresources &&
       url.protocol === 'file:' &&
-      route.request().resourceType() !== 'document'
+      request.resourceType() !== 'document'
     ) {
-      await route.abort('blockedbyclient');
+      await abort('file-subresource');
       return;
     }
 
@@ -97,7 +118,7 @@ export async function installRequestGuard(page: Page, options: RenderOptions): P
     if (!allowLocal && url.protocol !== 'file:') {
       const blocked = await isBlockedHost(url.hostname);
       if (blocked) {
-        await route.abort('blockedbyclient');
+        await abort('blocked-host');
         return;
       }
     }
