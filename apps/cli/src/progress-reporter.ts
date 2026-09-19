@@ -11,6 +11,9 @@ const STEP_LABELS: Record<string, string> = {
   'write-output': 'Writing output',
   'analyse-page': 'Analysing page',
   'detect-animations': 'Detecting animations',
+  'press-keys': 'Pressing keys',
+  'resize-gif': 'Resizing GIF',
+  'optimize-gif': 'Optimizing GIF',
 };
 
 export interface ProgressReporterContext {
@@ -31,9 +34,17 @@ export function formatDuration(ms: number): string {
   return `${minutes}m ${seconds}s`;
 }
 
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(1)} MB`;
+}
+
 export interface ProgressReporter {
   onProgress: OnProgress;
-  finish(outputPath: string): void;
+  finish(outputPath: string, sizeBytes?: number): void;
 }
 
 export function createProgressReporter(
@@ -117,7 +128,7 @@ export function createProgressReporter(
     }
   };
 
-  const finish = (outputPath: string): void => {
+  const finish = (outputPath: string, sizeBytes?: number): void => {
     const elapsed = Date.now() - startMs;
     const duration = formatDuration(elapsed);
     // Stop any active spinner before printing the Done line
@@ -125,7 +136,8 @@ export function createProgressReporter(
       spinner.stop();
       spinner = null;
     }
-    ora({ stream: process.stderr }).succeed(`Done in ${duration} → ${outputPath}`);
+    const sizeSuffix = sizeBytes !== undefined ? ` (${formatBytes(sizeBytes)})` : '';
+    ora({ stream: process.stderr }).succeed(`Done in ${duration} → ${outputPath}${sizeSuffix}`);
   };
 
   return { onProgress, finish };

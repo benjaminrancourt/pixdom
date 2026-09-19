@@ -42,6 +42,13 @@ export const RenderOptionsSchema = z.object({
   blockFileSubresources: z.boolean().optional(),
   verbose: z.boolean().optional(),
   waitUntil: NavigationWaitUntilSchema.optional(),
+  keys: z.array(z.string()).optional(),
+  keysDelay: z.number().int().min(0).max(60000).optional(),
+  resizeWidth: z.number().int().min(1).max(7680).optional(),
+  resizeHeight: z.number().int().min(1).max(4320).optional(),
+  gifOptimize: z.boolean().optional(),
+  gifLossy: z.number().int().min(0).max(300).optional(),
+  gifColors: z.number().int().min(2).max(256).optional(),
 });
 export type RenderOptions = z.infer<typeof RenderOptionsSchema>;
 

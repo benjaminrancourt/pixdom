@@ -78,6 +78,68 @@ describe('RenderOptionsSchema', () => {
   it('rejects non-integer quality', () => {
     expect(RenderOptionsSchema.safeParse({ ...base, quality: 85.5 }).success).toBe(false)
   })
+  it('accepts keys as an array of strings', () => {
+    const result = RenderOptionsSchema.safeParse({ ...base, keys: ['t', 's'] })
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.keys).toEqual(['t', 's'])
+  })
+  it('accepts options without keys', () => {
+    expect(RenderOptionsSchema.safeParse(base).success).toBe(true)
+  })
+  it('rejects keys with non-string entries', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, keys: ['t', 1] }).success).toBe(false)
+  })
+  it('accepts keysDelay within range', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, keysDelay: 2000 }).success).toBe(true)
+    expect(RenderOptionsSchema.safeParse({ ...base, keysDelay: 0 }).success).toBe(true)
+  })
+  it('rejects keysDelay out of range', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, keysDelay: -1 }).success).toBe(false)
+    expect(RenderOptionsSchema.safeParse({ ...base, keysDelay: 60001 }).success).toBe(false)
+  })
+  it('accepts options without keysDelay', () => {
+    expect(RenderOptionsSchema.safeParse(base).success).toBe(true)
+  })
+  it('accepts resizeWidth alone', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, resizeWidth: 400 }).success).toBe(true)
+  })
+  it('accepts resizeHeight alone', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, resizeHeight: 300 }).success).toBe(true)
+  })
+  it('accepts resizeWidth and resizeHeight together', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, resizeWidth: 400, resizeHeight: 300 }).success).toBe(true)
+  })
+  it('rejects resizeWidth out of range', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, resizeWidth: 0 }).success).toBe(false)
+    expect(RenderOptionsSchema.safeParse({ ...base, resizeWidth: 7681 }).success).toBe(false)
+  })
+  it('rejects resizeHeight out of range', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, resizeHeight: 0 }).success).toBe(false)
+    expect(RenderOptionsSchema.safeParse({ ...base, resizeHeight: 4321 }).success).toBe(false)
+  })
+  it('rejects non-integer resizeWidth', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, resizeWidth: 100.5 }).success).toBe(false)
+  })
+  it('accepts options without resize fields', () => {
+    expect(RenderOptionsSchema.safeParse(base).success).toBe(true)
+  })
+  it('accepts gifOptimize alone', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, gifOptimize: true }).success).toBe(true)
+  })
+  it('accepts gifLossy and gifColors together', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, gifOptimize: true, gifLossy: 50, gifColors: 128 }).success).toBe(true)
+  })
+  it('rejects gifLossy out of range', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, gifLossy: -1 }).success).toBe(false)
+    expect(RenderOptionsSchema.safeParse({ ...base, gifLossy: 301 }).success).toBe(false)
+  })
+  it('rejects gifColors out of range', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, gifColors: 1 }).success).toBe(false)
+    expect(RenderOptionsSchema.safeParse({ ...base, gifColors: 257 }).success).toBe(false)
+  })
+  it('rejects non-integer gifLossy', () => {
+    expect(RenderOptionsSchema.safeParse({ ...base, gifLossy: 50.5 }).success).toBe(false)
+  })
 })
 
 describe('ProfileIdSchema', () => {

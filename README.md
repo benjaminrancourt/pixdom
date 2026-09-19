@@ -173,6 +173,46 @@ pixdom convert \
   --output ./hero.gif
 ```
 
+**Shrinking a heavy GIF**
+
+GIFs get large fast. Two GIF-only post-processing steps run after FFmpeg encoding:
+
+```bash
+pixdom convert \
+  --file hero-animation.html \
+  --format gif \
+  --auto \
+  --resize-width 480 \
+  --optimize-gif \
+  --output ./hero.gif
+```
+
+- `--resize-width` / `--resize-height` scale the encoded GIF down (aspect ratio preserved).
+- `--optimize-gif` runs the result through [gifsicle](https://www.lcdf.org/gifsicle/) — frame-diff optimization (`-O3`) plus lossy compression — and typically cuts the file size by 50–80%.
+
+When `--optimize-gif` is used, **two files are written**: the un-optimized GIF is kept as `hero.max.gif` and the optimized one takes the requested path (`hero.gif`). A size summary is printed to stderr:
+
+```
+Optimized GIF: 147.7 KB (was 452.9 KB, -67%) — original kept at ./hero.max.gif
+```
+
+`--optimize-gif` alone uses these defaults; override them only if you need to:
+
+| Flag | Default with `--optimize-gif` | Range | Effect |
+|---|---|---|---|
+| `--gif-lossy <n>` | `80` | 0–300 | Lossy compression level. Higher = smaller file, more visible artifacts. `0` keeps only the lossless `-O3` optimization. |
+| `--gif-colors <n>` | _not applied_ (palette kept as encoded, up to 256 colors) | 2–256 | Reduce the palette size. Big win for flat UI/illustration content, less so for photos or gradients. |
+
+```bash
+# Aggressive: for flat, few-color designs
+pixdom convert --file card.html --format gif --auto --optimize-gif --gif-lossy 120 --gif-colors 64 --output ./card.gif
+
+# Conservative: lossless frame optimization only
+pixdom convert --file card.html --format gif --auto --optimize-gif --gif-lossy 0 --output ./card.gif
+```
+
+Both `--gif-lossy` and `--gif-colors` require `--optimize-gif`, and all four flags require `--format gif`.
+
 ---
 
 ### 3. Render a localhost page during development
@@ -286,6 +326,7 @@ Output:
   --format <fmt>        png | jpeg | webp | gif | mp4 | webm (default: png)
   --profile <slug>      Platform profile (sets width, height, format, quality)
   --quality <n>         Compression quality 0–100 (default: 90)
+  --no-metadata         Skip writing the .txt metadata sidecar file
 
 Dimensions:
   --width <n>           Viewport width in pixels (default: 1280, max: 7680)
@@ -295,6 +336,16 @@ Dimensions:
 Animation:
   --fps <n>             Frame rate for animated output (1–60)
   --duration <ms>       Animation cycle in ms (100–300000, overrides auto-detection)
+
+GIF post-processing (--format gif only, applied after encoding):
+  --resize-width <n>    Scale the encoded GIF to this width, aspect ratio preserved (1–7680)
+  --resize-height <n>   Scale the encoded GIF to this height, aspect ratio preserved (1–4320)
+  --optimize-gif        Compress with gifsicle (-O3 + lossy). Keeps the un-optimized
+                        file as <name>.max.gif; the optimized one takes <name>.gif
+  --gif-lossy <n>       Lossy level 0–300 (default: 80 when --optimize-gif is set;
+                        0 = lossless -O3 only). Requires --optimize-gif
+  --gif-colors <n>      Reduce palette to n colors, 2–256 (default: not applied —
+                        palette kept as encoded). Requires --optimize-gif
 
 Selection:
   --selector <css>      Capture a specific DOM element only
@@ -429,7 +480,7 @@ flowchart TD
 
 | Package | Role |
 |---|---|
-| `@pixdom/core` | Playwright + Sharp + FFmpeg pipeline |
+| `@pixdom/core` | Playwright + Sharp + FFmpeg (+ gifsicle) pipeline |
 | `@pixdom/detector` | CSS animation cycle detection, auto-mode logic |
 | `@pixdom/profiles` | Platform profile registry and resolution |
 | `@pixdom/types` | Zod schemas, shared types, error codes |
@@ -516,7 +567,7 @@ Issues labeled [`good first issue`](https://github.com/sushilkulkarni1389/pixdom
 
 Pixdom was designed, written, and debugged with [Claude Code](https://claude.ai/code) — which is also what created the problem it solves. Claude generated the animated HTML. Claude helped build the tool to render it. There's a certain loop in there that felt worth acknowledging.
 
-The pipeline runs on [Playwright](https://playwright.dev), [Sharp](https://sharp.pixelplumbing.com), and [FFmpeg](https://ffmpeg.org). The CLI is built with [Commander.js](https://github.com/tj/commander.js). The MCP server speaks the [Model Context Protocol](https://modelcontextprotocol.io).
+The pipeline runs on [Playwright](https://playwright.dev), [Sharp](https://sharp.pixelplumbing.com), [FFmpeg](https://ffmpeg.org), and [gifsicle](https://www.lcdf.org/gifsicle/) (GIF optimization). The CLI is built with [Commander.js](https://github.com/tj/commander.js). The MCP server speaks the [Model Context Protocol](https://modelcontextprotocol.io).
 
 ---
 

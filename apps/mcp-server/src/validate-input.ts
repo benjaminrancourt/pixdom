@@ -231,6 +231,26 @@ export function validateOutputPath(outputPath: string): ValidationError | null {
   return null;
 }
 
+// --- Keys validation ---
+
+const SAFE_KEY_PATTERN = /^[A-Za-z0-9+]{1,40}$/;
+
+export function validateKeys(keys?: string[]): ValidationError | null {
+  if (keys === undefined) return null;
+
+  for (const key of keys) {
+    if (!SAFE_KEY_PATTERN.test(key)) {
+      return {
+        code: 'INVALID_KEY',
+        message: `Invalid key name "${key}" in keys.`,
+        howToFix: 'Use Playwright key names (letters, digits, or names like "Enter"/"ArrowLeft"), optionally combined with "+" for modifiers (e.g. "Shift+A").',
+      };
+    }
+  }
+
+  return null;
+}
+
 // --- Resource limits validation (task 1.3) ---
 
 const MAX_WIDTH = 7680;

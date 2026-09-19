@@ -62,15 +62,24 @@ const CONVERT_FLAGS = [
   '--fps',
   '--duration',
   '--selector',
+  '--keys',
+  '--keys-delay',
   '--auto',
   '--allow-local',
+  '--no-metadata',
+  '--resize-width',
+  '--resize-height',
+  '--optimize-gif',
+  '--gif-lossy',
+  '--gif-colors',
 ];
 
 // Flags that consume the next token as their value. All others are boolean (flag-position).
 const VALUE_TAKING_FLAGS = new Set([
   '--profile', '--format', '--url', '--html', '--file',
   '--image', '--output', '--width', '--height', '--quality',
-  '--fps', '--duration', '--selector',
+  '--fps', '--duration', '--selector', '--keys', '--keys-delay',
+  '--resize-width', '--resize-height', '--gif-lossy', '--gif-colors',
 ]);
 
 /**
@@ -107,6 +116,13 @@ function generateFishCompletionScript(): string {
     'complete -c pixdom -n "__fish_seen_subcommand_from convert" -l fps -r -d "Frame rate for animated output"',
     'complete -c pixdom -n "__fish_seen_subcommand_from convert" -l duration -r -d "Animation cycle length in ms"',
     'complete -c pixdom -n "__fish_seen_subcommand_from convert" -l auto-size -d "Auto-detect output dimensions"',
+    'complete -c pixdom -n "__fish_seen_subcommand_from convert" -l keys -r -d "Comma-separated keys to press before capture"',
+    'complete -c pixdom -n "__fish_seen_subcommand_from convert" -l keys-delay -r -d "Wait this many ms before the first key press"',
+    'complete -c pixdom -n "__fish_seen_subcommand_from convert" -l resize-width -r -d "Resize the generated GIF to this width (gif only)"',
+    'complete -c pixdom -n "__fish_seen_subcommand_from convert" -l resize-height -r -d "Resize the generated GIF to this height (gif only)"',
+    'complete -c pixdom -n "__fish_seen_subcommand_from convert" -l optimize-gif -d "Compress the generated GIF with gifsicle (gif only)"',
+    'complete -c pixdom -n "__fish_seen_subcommand_from convert" -l gif-lossy -r -d "gifsicle lossy-compression level 0-300"',
+    'complete -c pixdom -n "__fish_seen_subcommand_from convert" -l gif-colors -r -d "Reduce the GIF palette to this many colors 2-256"',
     '',
     '# convert --file and --image: path completion via -F (force-files)',
     'complete -c pixdom -n "__fish_seen_subcommand_from convert" -l file -r -F -d "Local HTML file path"',

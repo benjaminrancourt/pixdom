@@ -17,7 +17,12 @@ export type RenderErrorCode =
   | 'INVALID_FPS'
   | 'INVALID_DURATION'
   | 'INVALID_WAIT_UNTIL'
-  | 'RESOURCE_LIMIT_EXCEEDED';
+  | 'INVALID_KEY'
+  | 'RESOURCE_LIMIT_EXCEEDED'
+  | 'INVALID_RESIZE_FORMAT'
+  | 'GIF_RESIZE_FAILED'
+  | 'INVALID_GIF_OPTIMIZE_FORMAT'
+  | 'GIF_OPTIMIZE_FAILED';
 
 export interface RenderError {
   code: RenderErrorCode;

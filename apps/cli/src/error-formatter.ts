@@ -164,13 +164,47 @@ const TEMPLATES: Partial<Record<RenderErrorCode, ErrorTemplate>> = {
     docs: '--wait-until',
     correction: null,
   },
+  INVALID_RESIZE_FORMAT: {
+    title: 'Resize flags require GIF format',
+    whatHappened: (e) => e.message,
+    howToFix:
+      '--resize-width and --resize-height only apply to animated GIF output. Add --format gif, or remove the resize flags.',
+    docs: '--resize-width, --resize-height, --format',
+    correction: null,
+  },
+  GIF_RESIZE_FAILED: {
+    title: 'GIF resize failed',
+    whatHappened: () => 'Sharp could not resize the generated animated GIF.',
+    howToFix:
+      'Check that --resize-width/--resize-height are reasonable relative to the generated GIF. Include the Detail below in bug reports.',
+    docs: '--resize-width, --resize-height',
+    correction: null,
+    showDetail: true,
+  },
   RESOURCE_LIMIT_EXCEEDED: {
     title: 'Resource limit exceeded',
     whatHappened: (e) => e.message,
     howToFix:
-      'Reduce --fps (max 60), --duration (max 300000ms), --width (max 7680), or --height (max 4320). For animation, lower fps or duration to keep total frames under 3600.',
-    docs: '--fps, --duration, --width, --height',
+      'Reduce --fps (max 60), --duration (max 300000ms), --width/--resize-width (max 7680), --height/--resize-height (max 4320), --gif-lossy (max 300), or --gif-colors (max 256). For animation, lower fps or duration to keep total frames under 3600.',
+    docs: '--fps, --duration, --width, --height, --resize-width, --resize-height, --gif-lossy, --gif-colors',
     correction: null,
+  },
+  INVALID_GIF_OPTIMIZE_FORMAT: {
+    title: 'GIF optimize flags require GIF format and --optimize-gif',
+    whatHappened: (e) => e.message,
+    howToFix:
+      '--optimize-gif, --gif-lossy, and --gif-colors only apply to animated GIF output, and --gif-lossy/--gif-colors require --optimize-gif to also be set.',
+    docs: '--optimize-gif, --gif-lossy, --gif-colors, --format',
+    correction: null,
+  },
+  GIF_OPTIMIZE_FAILED: {
+    title: 'GIF optimization failed',
+    whatHappened: () => 'gifsicle could not optimize the generated animated GIF.',
+    howToFix:
+      'Check that --gif-lossy/--gif-colors are reasonable. Include the Detail below in bug reports.',
+    docs: '--optimize-gif, --gif-lossy, --gif-colors',
+    correction: null,
+    showDetail: true,
   },
 };
 

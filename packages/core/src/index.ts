@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import sharp from 'sharp';
 import { chromium } from 'playwright';
 import type { ElementHandle } from 'playwright';
 import { detectAnimationCycle, autoDetectElement, autoDetectDuration, autoDetectFps } from '@pixdom/detector';
@@ -9,6 +10,7 @@ import { loadPage } from './load-page.js';
 import { renderStatic } from './static-renderer.js';
 import { renderAnimated } from './animated-renderer.js';
 import { renderImage } from './image-renderer.js';
+import { optimizeGif } from './gifsicle-spawn.js';
 import { scanForCycleLengths } from './animation-cycle-hint.js';
 import { installRequestGuard } from './request-guard.js';
 import { createPageDebugCollector } from './page-debug.js';
@@ -23,10 +25,16 @@ export { registerTempDir, releaseTempDir, cleanupAll } from './temp-registry.js'
 const ANIMATED_FORMATS = new Set(['gif', 'mp4', 'webm']);
 const STATIC_FORMATS = new Set(['png', 'jpeg', 'webp']);
 
+export interface RenderResult {
+  buffer: Buffer;
+  /** Pre-optimization GIF buffer, present only when `gifOptimize` changed the output. */
+  originalBuffer?: Buffer;
+}
+
 export async function render(
   options: RenderOptions,
   { onProgress }: { onProgress?: OnProgress } = {},
-): Promise<Result<Buffer, RenderError>> {
+): Promise<Result<RenderResult, RenderError>> {
   const emit = onProgress ?? (() => {});
 
   // File existence check before browser launch
@@ -38,7 +46,7 @@ export async function render(
   if (options.input.type === 'image') {
     try {
       const buffer = await renderImage(options, emit);
-      return ok(buffer);
+      return ok({ buffer });
     } catch (cause) {
       // renderImage throws typed RenderError objects for known conditions
       if (cause && typeof cause === 'object' && 'code' in cause) {
@@ -264,6 +272,23 @@ export async function render(
       emit({ type: 'step-done', step: 'selector' });
     }
 
+    // Press keys after auto-detection/selector resolution, right before capture
+    // dispatch — keeps auto-detection measuring the page's default state.
+    // keysDelay lets callers wait for keyboard listeners that only attach once
+    // an SPA finishes async-loading its content (domcontentloaded/load fire
+    // before that), since a keydown with no listener yet attached is a no-op.
+    if (options.keys && options.keys.length > 0) {
+      emit({ type: 'step-start', step: 'press-keys' });
+      if (options.keysDelay) {
+        await page.waitForTimeout(options.keysDelay);
+      }
+      for (const key of options.keys) {
+        await page.keyboard.press(key);
+        await page.waitForTimeout(100);
+      }
+      emit({ type: 'step-done', step: 'press-keys' });
+    }
+
     const isAnimatedFormat = ANIMATED_FORMATS.has(options.format);
     const isStaticFormat = STATIC_FORMATS.has(options.format);
 
@@ -272,7 +297,7 @@ export async function render(
       try {
         const staticOptions = autoSwitchedToStatic ? { ...options, format: 'png' as const } : options;
         const buffer = await renderStatic(page, staticOptions, elementHandle, emit);
-        return ok(buffer);
+        return ok({ buffer });
       } catch (cause) {
         return err(makeError('CAPTURE_FAILED', 'Static render failed', cause, undefined, debug?.snapshot()));
       }
@@ -300,8 +325,41 @@ export async function render(
         ? { ...options, fps: autoEffectiveFps }
         : options;
       try {
-        const buffer = await renderAnimated(page, effectiveOptions, cycleMs, elementHandle, emit);
-        return ok(buffer);
+        let buffer = await renderAnimated(page, effectiveOptions, cycleMs, elementHandle, emit);
+
+        if (
+          options.format === 'gif' &&
+          (options.resizeWidth !== undefined || options.resizeHeight !== undefined)
+        ) {
+          emit({ type: 'step-start', step: 'resize-gif' });
+          try {
+            buffer = await sharp(buffer, { animated: true })
+              .resize({ width: options.resizeWidth, height: options.resizeHeight, fit: 'inside' })
+              .gif()
+              .toBuffer();
+          } catch (resizeCause) {
+            return err(
+              makeError('GIF_RESIZE_FAILED', 'Failed to resize animated GIF', resizeCause, undefined, debug?.snapshot()),
+            );
+          }
+          emit({ type: 'step-done', step: 'resize-gif' });
+        }
+
+        if (options.format === 'gif' && options.gifOptimize) {
+          emit({ type: 'step-start', step: 'optimize-gif' });
+          const originalBuffer = buffer;
+          try {
+            buffer = await optimizeGif(buffer, { colors: options.gifColors, lossy: options.gifLossy });
+          } catch (optimizeCause) {
+            return err(
+              makeError('GIF_OPTIMIZE_FAILED', 'Failed to optimize animated GIF', optimizeCause, undefined, debug?.snapshot()),
+            );
+          }
+          emit({ type: 'step-done', step: 'optimize-gif' });
+          return ok({ buffer, originalBuffer });
+        }
+
+        return ok({ buffer });
       } catch (cause) {
         const msg = cause instanceof Error ? cause.message : String(cause);
         const code: RenderErrorCode = msg.toLowerCase().includes('ffmpeg')

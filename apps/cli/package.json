@@ -9,13 +9,14 @@
   "scripts": {
     "postinstall": "npx playwright install chromium",
     "typecheck": "tsc --noEmit",
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=esm --outfile=dist/index.js --external:playwright --external:sharp --external:ora --external:commander --external:omelette --external:ffmpeg-static && esbuild ../mcp-server/src/index.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/mcp-server.cjs --banner:js='#!/usr/bin/env node' --external:playwright --external:sharp --external:ffmpeg-static --external:@anthropic-ai/sdk --external:@modelcontextprotocol/sdk --external:zod && chmod +x dist/mcp-server.cjs"
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=esm --outfile=dist/index.js --external:playwright --external:sharp --external:ora --external:commander --external:omelette --external:ffmpeg-static --external:gifsicle && esbuild ../mcp-server/src/index.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/mcp-server.cjs --banner:js='#!/usr/bin/env node' --external:playwright --external:sharp --external:ffmpeg-static --external:gifsicle --external:@anthropic-ai/sdk --external:@modelcontextprotocol/sdk --external:zod && chmod +x dist/mcp-server.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.36.3",
     "@modelcontextprotocol/sdk": "1.27.1",
     "commander": "12.1.0",
     "ffmpeg-static": "5.3.0",
+    "gifsicle": "7.0.1",
     "omelette": "0.4.17",
     "ora": "8.2.0",
     "playwright": "1.58.2",

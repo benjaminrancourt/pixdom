@@ -13,7 +13,8 @@ import { registerCompletion } from './commands/completion.js';
 import { registerMcp } from './commands/mcp.js';
 import { formatError } from './error-formatter.js';
 import { validateFileInput, validateFormat, validateRawIpv4Host } from './validate-input.js';
-import { createProgressReporter } from './progress-reporter.js';
+import { createProgressReporter, formatBytes } from './progress-reporter.js';
+import { metadataPathFor, buildMetadataContent } from './metadata-sidecar.js';
 
 // ---------------------------------------------------------------------------
 // Validation helpers (must be defined before program.parse())
@@ -181,6 +182,14 @@ interface ConvertOpts {
   auto?: boolean;
   verbose?: boolean;
   waitUntil: string;
+  keys?: string;
+  keysDelay?: string;
+  resizeWidth?: string;
+  resizeHeight?: string;
+  optimizeGif?: boolean;
+  gifLossy?: string;
+  gifColors?: string;
+  metadata: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +275,86 @@ async function convertAction(opts: ConvertOpts, fmt: { argv: string[]; color: bo
     process.exit(1);
   }
 
+  // --resize-width / --resize-height validation (GIF-only post-generation resize)
+  let resizeWidth: number | undefined;
+  let resizeHeight: number | undefined;
+  if (opts.resizeWidth !== undefined || opts.resizeHeight !== undefined) {
+    if (opts.format !== 'gif') {
+      const renderErr: RenderError = {
+        code: 'INVALID_RESIZE_FORMAT',
+        message: `--resize-width/--resize-height are only supported with --format gif (got: --format ${opts.format})`,
+      };
+      process.stderr.write(formatError(renderErr, fmt) + '\n');
+      process.exit(1);
+    }
+    if (opts.resizeWidth !== undefined) {
+      resizeWidth = parseInt(opts.resizeWidth, 10);
+      if (isNaN(resizeWidth) || resizeWidth < 1 || resizeWidth > 7680) {
+        const renderErr: RenderError = {
+          code: 'RESOURCE_LIMIT_EXCEEDED',
+          message: `--resize-width must be between 1 and 7680 (got: ${opts.resizeWidth})`,
+        };
+        process.stderr.write(formatError(renderErr, fmt) + '\n');
+        process.exit(1);
+      }
+    }
+    if (opts.resizeHeight !== undefined) {
+      resizeHeight = parseInt(opts.resizeHeight, 10);
+      if (isNaN(resizeHeight) || resizeHeight < 1 || resizeHeight > 4320) {
+        const renderErr: RenderError = {
+          code: 'RESOURCE_LIMIT_EXCEEDED',
+          message: `--resize-height must be between 1 and 4320 (got: ${opts.resizeHeight})`,
+        };
+        process.stderr.write(formatError(renderErr, fmt) + '\n');
+        process.exit(1);
+      }
+    }
+  }
+
+  // --optimize-gif / --gif-lossy / --gif-colors validation (GIF-only post-generation compression)
+  let gifLossy: number | undefined;
+  let gifColors: number | undefined;
+  if (opts.optimizeGif || opts.gifLossy !== undefined || opts.gifColors !== undefined) {
+    if (opts.format !== 'gif') {
+      const renderErr: RenderError = {
+        code: 'INVALID_GIF_OPTIMIZE_FORMAT',
+        message: `--optimize-gif/--gif-lossy/--gif-colors are only supported with --format gif (got: --format ${opts.format})`,
+      };
+      process.stderr.write(formatError(renderErr, fmt) + '\n');
+      process.exit(1);
+    }
+    if (!opts.optimizeGif && (opts.gifLossy !== undefined || opts.gifColors !== undefined)) {
+      const renderErr: RenderError = {
+        code: 'INVALID_GIF_OPTIMIZE_FORMAT',
+        message: '--gif-lossy/--gif-colors require --optimize-gif to be set',
+      };
+      process.stderr.write(formatError(renderErr, fmt) + '\n');
+      process.exit(1);
+    }
+    if (opts.gifLossy !== undefined) {
+      gifLossy = parseInt(opts.gifLossy, 10);
+      if (!Number.isInteger(gifLossy) || isNaN(gifLossy) || gifLossy < 0 || gifLossy > 300) {
+        const renderErr: RenderError = {
+          code: 'RESOURCE_LIMIT_EXCEEDED',
+          message: `--gif-lossy must be an integer between 0 and 300 (got: ${opts.gifLossy})`,
+        };
+        process.stderr.write(formatError(renderErr, fmt) + '\n');
+        process.exit(1);
+      }
+    }
+    if (opts.gifColors !== undefined) {
+      gifColors = parseInt(opts.gifColors, 10);
+      if (!Number.isInteger(gifColors) || isNaN(gifColors) || gifColors < 2 || gifColors > 256) {
+        const renderErr: RenderError = {
+          code: 'RESOURCE_LIMIT_EXCEEDED',
+          message: `--gif-colors must be an integer between 2 and 256 (got: ${opts.gifColors})`,
+        };
+        process.stderr.write(formatError(renderErr, fmt) + '\n');
+        process.exit(1);
+      }
+    }
+  }
+
   // Derived frame count cap (7.5)
   if (fps !== undefined && duration !== undefined) {
     const frameCount = Math.ceil(duration / 1000) * fps;
@@ -273,6 +362,30 @@ async function convertAction(opts: ConvertOpts, fmt: { argv: string[]; color: bo
       const renderErr: RenderError = {
         code: 'RESOURCE_LIMIT_EXCEEDED',
         message: `Derived frame count (${frameCount}) exceeds the limit of 3600. Lower --fps (current: ${fps}) or --duration (current: ${duration}ms).`,
+      };
+      process.stderr.write(formatError(renderErr, fmt) + '\n');
+      process.exit(1);
+    }
+  }
+
+  // --keys parsing: comma-separated key names, trimmed, empties dropped
+  let keys: string[] | undefined;
+  if (opts.keys !== undefined) {
+    keys = opts.keys.split(',').map((k) => k.trim()).filter((k) => k.length > 0);
+    if (keys.length === 0) {
+      keys = undefined;
+    }
+  }
+
+  // --keys-delay validation: ms to wait before the first key press, e.g. for
+  // SPAs whose keyboard shortcuts only attach once async content has loaded
+  let keysDelay: number | undefined;
+  if (opts.keysDelay !== undefined) {
+    keysDelay = parseInt(opts.keysDelay, 10);
+    if (!Number.isInteger(keysDelay) || isNaN(keysDelay) || keysDelay < 0 || keysDelay > 60000) {
+      const renderErr: RenderError = {
+        code: 'INVALID_KEY',
+        message: `--keys-delay must be an integer between 0 and 60000 ms (got: ${opts.keysDelay})`,
       };
       process.stderr.write(formatError(renderErr, fmt) + '\n');
       process.exit(1);
@@ -493,6 +606,13 @@ async function convertAction(opts: ConvertOpts, fmt: { argv: string[]; color: bo
       profileViewport: opts.profile !== undefined,
       verbose: fmt.verbose,
       waitUntil,
+      keys,
+      keysDelay,
+      resizeWidth,
+      resizeHeight,
+      gifOptimize: opts.optimizeGif === true,
+      gifLossy,
+      gifColors,
     },
     { onProgress },
   );
@@ -502,8 +622,24 @@ async function convertAction(opts: ConvertOpts, fmt: { argv: string[]; color: bo
     process.exit(1);
   }
 
-  await fs.writeFile(outputPath, result.value);
-  reporter.finish(outputPath);
+  if (result.value.originalBuffer) {
+    const maxPath = outputPath.replace(/\.[^./]+$/, '.max.gif');
+    await fs.writeFile(maxPath, result.value.originalBuffer);
+    await fs.writeFile(outputPath, result.value.buffer);
+    const savedPct = Math.round(
+      (1 - result.value.buffer.length / result.value.originalBuffer.length) * 100,
+    );
+    process.stderr.write(
+      `Optimized GIF: ${formatBytes(result.value.buffer.length)} (was ${formatBytes(result.value.originalBuffer.length)}, -${savedPct}%) — original kept at ${maxPath}\n`,
+    );
+  } else {
+    await fs.writeFile(outputPath, result.value.buffer);
+  }
+  if (opts.metadata !== false) {
+    const metadataPath = metadataPathFor(outputPath);
+    await fs.writeFile(metadataPath, buildMetadataContent(fmt.argv, new Date()));
+  }
+  reporter.finish(outputPath, result.value.buffer.length);
   process.stdout.write(`${outputPath}\n`);
 }
 
@@ -538,8 +674,15 @@ program
   .option('--image <path>', 'Local image file to convert (bypasses browser)')
   .option('--fps <n>', 'Frame rate for animated output (gif/mp4/webm)')
   .option('--duration <ms>', 'Animation cycle length in ms (overrides auto-detection)')
+  .option('--resize-width <n>', 'Resize the generated GIF to this width in pixels, preserving aspect ratio (gif only)')
+  .option('--resize-height <n>', 'Resize the generated GIF to this height in pixels, preserving aspect ratio (gif only)')
+  .option('--optimize-gif', 'Compress the generated GIF with gifsicle after encoding (gif only). Writes the pre-optimization file alongside as <name>.max.gif')
+  .option('--gif-lossy <n>', 'gifsicle lossy-compression level 0–300 (default: 80 when --optimize-gif is set; 0 = lossless -O3 only). Requires --optimize-gif')
+  .option('--gif-colors <n>', 'Reduce the GIF palette to this many colors 2–256 (default: not applied, palette kept as encoded). Requires --optimize-gif')
   .option('--auto-size', 'Auto-detect output dimensions from page content')
   .option('--selector <css>', 'CSS selector to capture a specific DOM element (e.g. "#canvas", ".card")')
+  .option('--keys <keys>', 'Comma-separated keys to press right before capture begins, e.g. "t,s" (pressed after page load and --auto detection)')
+  .option('--keys-delay <ms>', 'Wait this many ms before the first key press — needed for SPAs whose keyboard shortcuts only attach after async content loads (0–60000)')
   .option('--allow-local', 'Allow rendering of localhost and private network URLs (development only)')
   .option(
     '--wait-until <strategy>',
@@ -554,6 +697,7 @@ program
     '--verbose',
     'Print console messages, failed requests, and raw error detail on failure (useful for CSP/timeout debugging)',
   )
+  .option('--no-metadata', 'Skip writing the .txt metadata sidecar file next to the output')
   .action(async (opts) => {
     const globalOpts = program.opts<{ color: boolean; progress: boolean }>();
     const color =

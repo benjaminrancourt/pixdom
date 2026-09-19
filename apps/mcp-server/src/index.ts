@@ -11,7 +11,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { realpathSync } from 'node:fs';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
-import { validateUrl, validateResourceLimits, validateFileInput } from './validate-input.js';
+import { validateUrl, validateResourceLimits, validateFileInput, validateKeys } from './validate-input.js';
 import { OUTPUT_DIR, resolveApiKey } from './env.js';
 import {
   ensureMcpOutputDir,
@@ -140,6 +140,7 @@ const CONVERT_DESCRIPTION = [
   '  - To capture only a specific element: set selector to "#card"',
   '  - For animated output: set format to "gif" and either use auto: true or set duration',
   `  - For platform-sized output: set profile to "linkedin-post" instead of width/height`,
+  '  - To press keys right before capture starts (e.g. to reveal UI gated behind a keyboard shortcut): set keys to ["t", "s"] (pressed in order, after any auto-detection). If the site is a single-page app whose shortcuts only attach after data finishes loading, also set keysDelay (e.g. 2000) or the keys will be pressed too early and silently ignored',
   '',
   `Available profiles: ${profileSlugList}`,
 ].join('\n');
@@ -169,6 +170,8 @@ server.registerTool(
       fps: z.coerce.number().int().min(1).max(60).optional().describe('Frame rate for animated output (1–60). Must be a number, not a string.'),
       duration: z.coerce.number().min(100).max(300000).optional().describe('Animation cycle length in milliseconds (100–300000). Must be a number, not a string.'),
       allowLocal: z.preprocess(v => v === 'true' ? true : v === 'false' ? false : v, z.boolean()).optional().describe('Allow localhost and private-network URLs (development only — prints a warning). Must be boolean true or false, not a string.'),
+      keys: z.array(z.string()).optional().describe('Sequence of key names to press right before capture begins, e.g. ["t", "s"] (Playwright key names). Pressed after page load and auto-detection, so it does not affect what auto-detection measures.'),
+      keysDelay: z.coerce.number().int().min(0).max(60000).optional().describe('Milliseconds to wait before the first key press (0–60000). Needed for single-page apps whose keyboard shortcuts only attach once async content has finished loading — without it, keys pressed too early are silently ignored. Must be a number, not a string.'),
     },
   },
   async (params) => {
@@ -203,6 +206,9 @@ server.registerTool(
         duration: params.duration,
       });
       if (limitsErr) return mcpError(limitsErr.code, limitsErr.message, limitsErr.howToFix);
+
+      const keysErr = validateKeys(params.keys);
+      if (keysErr) return mcpError(keysErr.code, keysErr.message, keysErr.howToFix);
 
       // Build RenderInput
       let input: RenderInput;
@@ -258,6 +264,8 @@ server.registerTool(
         duration: params.duration,
         allowLocal: params.allowLocal,
         blockFileSubresources,
+        keys: params.keys,
+        keysDelay: params.keysDelay,
       };
 
       const result = await render(options);
@@ -266,7 +274,7 @@ server.registerTool(
         return mcpErrorFromRenderError(result.error);
       }
 
-      const outputPath = await writeOutput(result.value, options.format, params.output);
+      const outputPath = await writeOutput(result.value.buffer, options.format, params.output);
 
       return {
         content: [
@@ -297,6 +305,7 @@ const GENERATE_DESCRIPTION = [
   '  - For animated output: set format to "gif" and either use auto: true or set duration',
   `  - For platform-sized output: set profile to "instagram-post-square" instead of width/height`,
   '  - To capture only a specific element from the generated HTML: set selector to "#card"',
+  '  - To press keys right before capture starts (e.g. to reveal UI gated behind a keyboard shortcut): set keys to ["t", "s"] (pressed in order, after any auto-detection). If the site is a single-page app whose shortcuts only attach after data finishes loading, also set keysDelay (e.g. 2000) or the keys will be pressed too early and silently ignored',
   '',
   `Available profiles: ${profileSlugList}`,
 ].join('\n');
@@ -326,6 +335,8 @@ server.registerTool(
       auto: z.preprocess(v => v === 'true' ? true : v === 'false' ? false : v, z.boolean()).optional().describe('Enable smart auto mode: automatically detects animated elements, duration, and FPS. Must be boolean true or false, not a string.'),
       fps: z.coerce.number().int().min(1).max(60).optional().describe('Frame rate for animated output (1–60). Must be a number, not a string.'),
       duration: z.coerce.number().min(100).max(300000).optional().describe('Animation cycle length in milliseconds (100–300000). Must be a number, not a string.'),
+      keys: z.array(z.string()).optional().describe('Sequence of key names to press right before capture begins, e.g. ["t", "s"] (Playwright key names). Pressed after page load and auto-detection, so it does not affect what auto-detection measures.'),
+      keysDelay: z.coerce.number().int().min(0).max(60000).optional().describe('Milliseconds to wait before the first key press (0–60000). Needed for single-page apps whose keyboard shortcuts only attach once async content has finished loading — without it, keys pressed too early are silently ignored. Must be a number, not a string.'),
     },
   },
   async (params) => {
@@ -346,6 +357,9 @@ server.registerTool(
         duration: params.duration,
       });
       if (limitsErr) return mcpError(limitsErr.code, limitsErr.message, limitsErr.howToFix);
+
+      const keysErr = validateKeys(params.keys);
+      if (keysErr) return mcpError(keysErr.code, keysErr.message, keysErr.howToFix);
 
       const message = await anthropic.messages.create({
         model: params.model ?? 'claude-sonnet-4-20250514',
@@ -379,6 +393,8 @@ server.registerTool(
         fps: params.fps,
         duration: params.duration,
         profileViewport: params.profile !== undefined ? true : undefined,
+        keys: params.keys,
+        keysDelay: params.keysDelay,
       };
 
       const result = await render(options);
@@ -387,7 +403,7 @@ server.registerTool(
         return mcpErrorFromRenderError(result.error);
       }
 
-      const outputPath = await writeOutput(result.value, options.format, params.output);
+      const outputPath = await writeOutput(result.value.buffer, options.format, params.output);
 
       return {
         content: [
